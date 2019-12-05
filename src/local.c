@@ -96,7 +96,9 @@ ev_tstamp last = 0;
 static int ipv6first = 0;
 static int fast_open = 0;
 
+#ifndef SS_NG
 static obfs_para_t *obfs_para  = NULL;
+#endif
 
 #ifdef HAVE_SETRLIMIT
 static int nofile = 0;
@@ -300,8 +302,12 @@ server_recv_cb(EV_P_ ev_io *w, int revents)
 #ifdef ANDROID
             tx += remote->buf->len;
 #endif
-            if (obfs_para)
-                obfs_para->obfs_request(remote->buf, BUF_SIZE, server->obfs);
+            if (server->obfs_para)
+#ifndef SS_NG
+                server->obfs_para->obfs_request(remote->buf, BUF_SIZE, server->obfs);
+#else
+                server->obfs_para->obfs_request(remote->buf, BUF_SIZE, server->obfs, server->obfs_para);
+#endif
 
             if (!remote->send_ctx->connected) {
 #ifdef ANDROID
@@ -439,6 +445,7 @@ server_recv_cb(EV_P_ ev_io *w, int revents)
 
             server->stage = STAGE_STREAM;
 
+#ifndef SS_NG
             remote = create_remote(server->listener, NULL);
 
             if (remote == NULL) {
@@ -446,6 +453,68 @@ server_recv_cb(EV_P_ ev_io *w, int revents)
                 close_and_free_server(EV_A_ server);
                 return;
             }
+#else
+            int skip_len = 0;
+            char name[4 * (256 / 3) + 1], *proxy_host = "", *proxy_port = "", *method = "", *password = "",
+                    *obfs = "", *obfs_host = "";
+            //name
+            memset(name, 0, strlen(name));
+            uint8_t slen = *(uint8_t *)(buf->data + skip_len);
+            memcpy(name, buf->data + skip_len + 1, slen);
+            name[slen] = '\0';
+            skip_len += 1 + slen;
+
+            get_ss_proxy_info(name, &proxy_host, &proxy_port, &method, &password, &obfs, &obfs_host);
+
+            if (strcmp(obfs, "tls") == 0) {
+                server->obfs_para->name = "tls";
+                server->obfs_para->host = ss_malloc(strlen(obfs_host) + 1);
+                strcpy(server->obfs_para->host, obfs_host);
+                server->obfs_para->uri = "/";
+                server->obfs_para->port = 443;
+                server->obfs_para->send_empty_response_upon_connection = false;
+                server->obfs_para->obfs_request = &obfs_tls_request;
+                server->obfs_para->obfs_response = &obfs_tls_response;
+                server->obfs_para->deobfs_request = &deobfs_tls_request;
+                server->obfs_para->deobfs_response = &deobfs_tls_response;
+                server->obfs_para->check_obfs = &check_tls_request;
+                server->obfs_para->disable = &disable_tls;
+                server->obfs_para->is_enable = &is_enable_tls;
+            } else if (strcmp(obfs, "http") == 0) {
+                server->obfs_para->name = "http";
+                server->obfs_para->host = ss_malloc(strlen(obfs_host) + 1);
+                strcpy(server->obfs_para->host, obfs_host);
+                server->obfs_para->uri = "/";
+                server->obfs_para->port = 80;
+                server->obfs_para->send_empty_response_upon_connection = true;
+                server->obfs_para->obfs_request = &obfs_http_request;
+                server->obfs_para->obfs_response = &obfs_http_response;
+                server->obfs_para->deobfs_request = &deobfs_http_header;
+                server->obfs_para->deobfs_response = &deobfs_http_header;
+                server->obfs_para->check_obfs = &check_http_header;
+                server->obfs_para->disable = &disable_http;
+                server->obfs_para->is_enable = &is_enable_http;
+            } else {
+                LOGE("unsupported obfs %s", obfs);
+                close_and_free_server(EV_A_ server);
+                return;
+            }
+
+            buf->len -= skip_len;
+            memmove(buf->data, buf->data + skip_len, buf->len);
+
+            struct sockaddr_storage storage;
+            memset(&storage, 0, sizeof(struct sockaddr_storage));
+            if (get_sockaddr(proxy_host, proxy_port, &storage, 0, ipv6first) != -1) {
+                remote = create_remote(server->listener, (struct sockaddr *) &storage);
+            }
+
+            if (remote == NULL) {
+                LOGE("invalid remote addr");
+                close_and_free_server(EV_A_ server);
+                return;
+            }
+#endif
 
             if (buf->len > 0) {
                 memcpy(remote->buf->data, buf->data, buf->len);
@@ -548,8 +617,12 @@ remote_recv_cb(EV_P_ ev_io *w, int revents)
 #ifdef ANDROID
         rx += server->buf->len;
 #endif
-        if (obfs_para) {
-            if (obfs_para->deobfs_response(server->buf, BUF_SIZE, server->obfs)) {
+        if (server->obfs_para) {
+#ifndef SS_NG
+            if (server->obfs_para->deobfs_response(server->buf, BUF_SIZE, server->obfs)) {
+#else
+            if (server->obfs_para->deobfs_response(server->buf, BUF_SIZE, server->obfs, server->obfs_para)) {
+#endif
                 LOGE("invalid obfuscating");
                 close_and_free_remote(EV_A_ remote);
                 close_and_free_server(EV_A_ server);
@@ -731,9 +804,16 @@ new_server(int fd)
     server->recv_ctx->server    = server;
     server->send_ctx->server    = server;
 
+#ifndef SS_NG
     if (obfs_para != NULL) {
+#else
+    {
+        server->obfs_para = (obfs_para_t *) ss_malloc(sizeof(obfs_para_t));
+        memset(server->obfs_para, 0, sizeof(obfs_para_t));
+#endif
         server->obfs = (obfs_t *)ss_malloc(sizeof(obfs_t));
         memset(server->obfs, 0, sizeof(obfs_t));
+
     }
 
     __ev_io_init(&server->recv_ctx->io, server_recv_cb, fd, EV_READ);
@@ -755,6 +835,14 @@ free_server(server_t *server)
             ss_free(server->obfs->extra);
         ss_free(server->obfs);
     }
+#ifdef SS_NG
+    if (server->obfs_para != NULL) {
+        if (server->obfs_para->host != NULL) {
+            ss_free(server->obfs_para->host);
+        }
+        ss_free(server->obfs_para);
+    }
+#endif
     if (server->remote != NULL) {
         server->remote->server = NULL;
     }
@@ -784,12 +872,16 @@ create_remote(listen_ctx_t *listener,
 {
     struct sockaddr *remote_addr;
 
+#ifndef SS_NG
     int index = rand() % listener->remote_num;
     if (addr == NULL) {
         remote_addr = listener->remote_addr[index];
     } else {
         remote_addr = addr;
     }
+#else
+    remote_addr = addr;
+#endif
 
     int remotefd = socket(remote_addr->sa_family, SOCK_STREAM, IPPROTO_TCP);
 
@@ -876,21 +968,28 @@ main(int argc, char **argv)
     char *local_addr = NULL;
     char *timeout    = NULL;
     char *pid_path   = NULL;
+#ifndef SS_NG
     char *conf_path  = NULL;
+#endif
     char *iface      = NULL;
+#ifndef SS_NG
     char *obfs_host  = NULL;
     char *obfs_uri   = NULL;
+#endif
 
     srand(time(NULL));
 
+#ifndef SS_NG
     int remote_num = 0;
     ss_addr_t remote_addr[MAX_REMOTE_NUM];
     char *remote_port = NULL;
 
     char *ss_remote_host = getenv("SS_REMOTE_HOST");
     char *ss_remote_port = getenv("SS_REMOTE_PORT");
+#endif
     char *ss_local_host  = getenv("SS_LOCAL_HOST");
     char *ss_local_port  = getenv("SS_LOCAL_PORT");
+#ifndef SS_NG
     char *ss_plugin_opts = getenv("SS_PLUGIN_OPTIONS");
 
     if (ss_remote_host != NULL) {
@@ -906,6 +1005,7 @@ main(int argc, char **argv)
     if (ss_remote_port != NULL) {
         remote_port = ss_remote_port;
     }
+#endif
 
     if (ss_local_host != NULL) {
         local_addr = ss_local_host;
@@ -915,6 +1015,7 @@ main(int argc, char **argv)
         local_port = ss_local_port;
     }
 
+#ifndef SS_NG
     if (ss_plugin_opts != NULL) {
         ss_plugin_opts = strdup(ss_plugin_opts);
         options_t opts;
@@ -974,6 +1075,7 @@ main(int argc, char **argv)
             }
         }
     }
+#endif
 
     int option_index = 0;
 
@@ -1005,6 +1107,7 @@ main(int argc, char **argv)
             } else if (option_index == 1) {
                 mptcp = 1;
                 LOGI("enable multipath TCP");
+#ifndef SS_NG
             } else if (option_index == 2) {
                 if (strcmp(optarg, obfs_http->name) == 0)
                     obfs_para = obfs_http;
@@ -1014,11 +1117,13 @@ main(int argc, char **argv)
                 obfs_host = optarg;
             } else if (option_index == 4) {
                 obfs_uri = optarg;
+#endif
             } else if (option_index == 5) {
                 usage();
                 exit(EXIT_SUCCESS);
             }
             break;
+#ifndef SS_NG
         case 's':
             if (remote_num < MAX_REMOTE_NUM) {
                 remote_addr[remote_num].host   = optarg;
@@ -1028,6 +1133,7 @@ main(int argc, char **argv)
         case 'p':
             remote_port = optarg;
             break;
+#endif
         case 'l':
             local_port = optarg;
             break;
@@ -1038,9 +1144,11 @@ main(int argc, char **argv)
         case 't':
             timeout = optarg;
             break;
+#ifndef SS_NG
         case 'c':
             conf_path = optarg;
             break;
+#endif
         case 'i':
             iface = optarg;
             break;
@@ -1082,6 +1190,7 @@ main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
+#ifndef SS_NG
     if (conf_path != NULL) {
         jconf_t *conf = read_jconf(conf_path);
         if (remote_num == 0) {
@@ -1131,12 +1240,13 @@ main(int argc, char **argv)
 
     if (remote_num == 0 || remote_port == NULL ||
 #ifndef HAVE_LAUNCHD
-        local_port == NULL ||
 #endif
+        local_port == NULL ||
         obfs_para == NULL) {
         usage();
         exit(EXIT_FAILURE);
     }
+#endif
 
     if (timeout == NULL) {
         timeout = "600";
@@ -1177,6 +1287,7 @@ main(int argc, char **argv)
         LOGI("resolving hostname to IPv6 address first");
     }
 
+#ifndef SS_NG
     if (obfs_para) {
         if (obfs_host != NULL)
             obfs_para->host = obfs_host;
@@ -1190,6 +1301,7 @@ main(int argc, char **argv)
             LOGI("obfuscating hostname: %s", obfs_host);
         if (obfs_uri) LOGI("obfuscation uri path: %s", obfs_uri);
     }
+#endif
 
 #ifdef __MINGW32__
     winsock_init();
@@ -1201,6 +1313,7 @@ main(int argc, char **argv)
 
     // Setup proxy context
     listen_ctx_t listen_ctx;
+#ifndef SS_NG
     listen_ctx.remote_num  = remote_num;
     listen_ctx.remote_addr = ss_malloc(sizeof(struct sockaddr *) * remote_num);
     memset(listen_ctx.remote_addr, 0, sizeof(struct sockaddr *) * remote_num);
@@ -1215,6 +1328,7 @@ main(int argc, char **argv)
         }
         listen_ctx.remote_addr[i] = (struct sockaddr *)storage;
     }
+#endif
     listen_ctx.timeout = atoi(timeout);
     listen_ctx.iface   = iface;
     listen_ctx.mptcp   = mptcp;
@@ -1292,9 +1406,11 @@ main(int argc, char **argv)
     ev_io_stop(loop, &listen_ctx.io);
     free_connections(loop);
 
+#ifndef SS_NG
     for (i = 0; i < remote_num; i++)
         ss_free(listen_ctx.remote_addr[i]);
     ss_free(listen_ctx.remote_addr);
+#endif
 
 #ifdef __MINGW32__
     winsock_cleanup();

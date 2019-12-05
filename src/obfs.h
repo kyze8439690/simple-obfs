@@ -39,11 +39,16 @@ typedef struct obfs {
 
 typedef struct obfs_para {
     const char *name;
+#ifndef SS_NG
     const char *host;
+#else
+    char *host;
+#endif
     const char *uri;
     uint16_t port;
     bool send_empty_response_upon_connection;
 
+#ifndef SS_NG
     int(*const obfs_request)(buffer_t *, size_t, obfs_t *);
     int(*const obfs_response)(buffer_t *, size_t, obfs_t *);
     int(*const deobfs_request)(buffer_t *, size_t, obfs_t *);
@@ -51,7 +56,18 @@ typedef struct obfs_para {
     int(*const check_obfs)(buffer_t *);
     void(*const disable)(obfs_t *);
     int(*const is_enable)(obfs_t *);
+#else
+    int(* obfs_request)(buffer_t *, size_t, obfs_t *, void *);
+    int(* obfs_response)(buffer_t *, size_t, obfs_t *, void *);
+    int(* deobfs_request)(buffer_t *, size_t, obfs_t *, void *);
+    int(* deobfs_response)(buffer_t *, size_t, obfs_t *, void *);
+    int(* check_obfs)(buffer_t *, void *);
+    void(* disable)(obfs_t *, void *);
+    int(* is_enable)(obfs_t *, void *);
+#endif
 } obfs_para_t;
+
+
 
 
 #endif

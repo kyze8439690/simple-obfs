@@ -48,6 +48,11 @@ int protect_socket(int fd);
 int send_traffic_stat(uint64_t tx, uint64_t rx);
 #endif
 
+#ifdef SS_NG
+int get_ss_proxy_info(char *name, char **proxy_host, char **proxy_port, char **method,
+                      char **password, char **obfs, char **obfs_host);
+#endif
+
 #define STAGE_ERROR     -1  /* Error detected                   */
 #define STAGE_INIT       0  /* Initial stage                    */
 #define STAGE_HANDSHAKE  1  /* Handshake with client            */

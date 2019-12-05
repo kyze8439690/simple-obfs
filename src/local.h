@@ -34,12 +34,16 @@
 typedef struct listen_ctx {
     ev_io io;
     char *iface;
+#ifndef SS_NG
     int remote_num;
+#endif
     int method;
     int timeout;
     int fd;
     int mptcp;
+#ifndef SS_NG
     struct sockaddr **remote_addr;
+#endif
 } listen_ctx_t;
 
 typedef struct server_ctx {
@@ -53,6 +57,9 @@ typedef struct server {
     int stage;
 
     obfs_t *obfs;
+#ifdef SS_NG
+    obfs_para_t *obfs_para;
+#endif
 
     struct server_ctx *recv_ctx;
     struct server_ctx *send_ctx;

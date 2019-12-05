@@ -164,6 +164,7 @@ tls_encrypted_handshake_template = {
 
 const char tls_data_header[3] = {0x17, 0x03, 0x03};
 
+#ifndef SS_NG
 static int obfs_tls_request(buffer_t *, size_t, obfs_t *);
 static int obfs_tls_response(buffer_t *, size_t, obfs_t *);
 static int deobfs_tls_request(buffer_t *, size_t, obfs_t *);
@@ -189,6 +190,7 @@ static obfs_para_t obfs_tls_st = {
 };
 
 obfs_para_t *obfs_tls = &obfs_tls_st;
+#endif
 
 static int
 obfs_app_data(buffer_t *buf, size_t cap, obfs_t *obfs)
@@ -255,12 +257,20 @@ deobfs_app_data(buffer_t *buf, size_t idx, obfs_t *obfs)
 }
 
 
+#ifndef SS_NG
 static int
 obfs_tls_request(buffer_t *buf, size_t cap, obfs_t *obfs)
+#else
+int obfs_tls_request(buffer_t *buf, size_t cap, obfs_t *obfs, void *obfs_para)
+#endif
 {
     if (obfs == NULL || obfs->obfs_stage < 0) return 0;
 
     static buffer_t tmp = { 0, 0, 0, NULL };
+
+#ifdef SS_NG
+    obfs_para_t *obfs_tls = obfs_para;
+#endif
 
     if (obfs->obfs_stage == 0) {
 
@@ -321,8 +331,12 @@ obfs_tls_request(buffer_t *buf, size_t cap, obfs_t *obfs)
     return buf->len;
 }
 
+#ifndef SS_NG
 static int
 obfs_tls_response(buffer_t *buf, size_t cap, obfs_t *obfs)
+#else
+int obfs_tls_response(buffer_t *buf, size_t cap, obfs_t *obfs, void *obfs_para)
+#endif
 {
     if (obfs == NULL || obfs->obfs_stage < 0) return 0;
 
@@ -378,8 +392,12 @@ obfs_tls_response(buffer_t *buf, size_t cap, obfs_t *obfs)
     return buf->len;
 }
 
+#ifndef SS_NG
 static int
 deobfs_tls_request(buffer_t *buf, size_t cap, obfs_t *obfs)
+#else
+int deobfs_tls_request(buffer_t *buf, size_t cap, obfs_t *obfs, void *obfs_para)
+#endif
 {
     if (obfs == NULL || obfs->deobfs_stage < 0) return 0;
 
@@ -446,8 +464,12 @@ deobfs_tls_request(buffer_t *buf, size_t cap, obfs_t *obfs)
     return 0;
 }
 
+#ifndef SS_NG
 static int
 deobfs_tls_response(buffer_t *buf, size_t cap, obfs_t *obfs)
+#else
+int deobfs_tls_response(buffer_t *buf, size_t cap, obfs_t *obfs, void *obfs_para)
+#endif
 {
     if (obfs == NULL || obfs->deobfs_stage < 0) return 0;
 
@@ -502,8 +524,12 @@ deobfs_tls_response(buffer_t *buf, size_t cap, obfs_t *obfs)
     return 0;
 }
 
+#ifndef SS_NG
 static int
 check_tls_request(buffer_t *buf)
+#else
+int check_tls_request(buffer_t *buf, void *obfs_para)
+#endif
 {
     char *data = buf->data;
     int len    = buf->len;
@@ -522,15 +548,23 @@ check_tls_request(buffer_t *buf)
         return OBFS_ERROR;
 }
 
+#ifndef SS_NG
 static void
 disable_tls(obfs_t *obfs)
+#else
+void disable_tls(obfs_t *obfs, void *obfs_para)
+#endif
 {
     obfs->obfs_stage = -1;
     obfs->deobfs_stage = -1;
 }
 
+#ifndef SS_NG
 static int
 is_enable_tls(obfs_t *obfs)
+#else
+int is_enable_tls(obfs_t *obfs, void *obfs_para)
+#endif
 {
     return obfs->obfs_stage != -1 && obfs->deobfs_stage != -1;
 }

@@ -50,16 +50,19 @@ static const char *http_response_template =
     "Sec-WebSocket-Accept: %s\r\n"
     "\r\n";
 
+#ifndef SS_NG
 static int obfs_http_request(buffer_t *, size_t, obfs_t *);
 static int obfs_http_response(buffer_t *, size_t, obfs_t *);
 static int deobfs_http_header(buffer_t *, size_t, obfs_t *);
 static int check_http_header(buffer_t *buf);
 static void disable_http(obfs_t *obfs);
 static int is_enable_http(obfs_t *obfs);
+#endif
 
 static int get_header(const char *, const char *, int, char **);
 static int next_header(const char **, int *);
 
+#ifndef SS_NG
 static obfs_para_t obfs_http_st = {
     .name            = "http",
     .port            = 80,
@@ -75,9 +78,14 @@ static obfs_para_t obfs_http_st = {
 };
 
 obfs_para_t *obfs_http = &obfs_http_st;
+#endif
 
+#ifndef SS_NG
 static int
 obfs_http_request(buffer_t *buf, size_t cap, obfs_t *obfs)
+#else
+int obfs_http_request(buffer_t *buf, size_t cap, obfs_t *obfs, void *obfs_para)
+#endif
 {
 
     if (obfs == NULL || obfs->obfs_stage != 0) return 0;
@@ -93,6 +101,10 @@ obfs_http_request(buffer_t *buf, size_t cap, obfs_t *obfs)
     char http_header[512];
     uint8_t key[16];
     char b64[64];
+
+#ifdef SS_NG
+    obfs_para_t *obfs_http = obfs_para;
+#endif
 
     if (obfs_http->port != 80)
         snprintf(host_port, sizeof(host_port), "%s:%d", obfs_http->host, obfs_http->port);
@@ -117,8 +129,12 @@ obfs_http_request(buffer_t *buf, size_t cap, obfs_t *obfs)
     return buf->len;
 }
 
+#ifndef SS_NG
 static int
 obfs_http_response(buffer_t *buf, size_t cap, obfs_t *obfs)
+#else
+int obfs_http_response(buffer_t *buf, size_t cap, obfs_t *obfs, void *obfs_para)
+#endif
 {
     if (obfs == NULL || obfs->obfs_stage != 0) return 0;
     obfs->obfs_stage++;
@@ -159,8 +175,12 @@ obfs_http_response(buffer_t *buf, size_t cap, obfs_t *obfs)
     return buf->len;
 }
 
+#ifndef SS_NG
 static int
 deobfs_http_header(buffer_t *buf, size_t cap, obfs_t *obfs)
+#else
+int deobfs_http_header(buffer_t *buf, size_t cap, obfs_t *obfs, void *obfs_para)
+#endif
 {
     if (obfs == NULL || obfs->deobfs_stage != 0) return 0;
 
@@ -190,8 +210,12 @@ deobfs_http_header(buffer_t *buf, size_t cap, obfs_t *obfs)
     return err;
 }
 
+#ifndef SS_NG
 static int
 check_http_header(buffer_t *buf)
+#else
+int check_http_header(buffer_t *buf, void *obfs_para)
+#endif
 {
     char *data = buf->data;
     int len    = buf->len;
@@ -218,6 +242,10 @@ check_http_header(buffer_t *buf)
             free(protocol);
         }
     }
+
+#ifdef SS_NG
+    obfs_para_t *obfs_http = obfs_para;
+#endif
 
     if (obfs_http->host != NULL) {
         char *hostname;
@@ -313,15 +341,23 @@ next_header(const char **data, int *len)
     return header_len;
 }
 
+#ifndef SS_NG
 static void
 disable_http(obfs_t *obfs)
+#else
+void disable_http(obfs_t *obfs, void *obfs_http)
+#endif
 {
     obfs->obfs_stage = -1;
     obfs->deobfs_stage = -1;
 }
 
+#ifndef SS_NG
 static int
 is_enable_http(obfs_t *obfs)
+#else
+int is_enable_http(obfs_t *obfs, void *obfs_http)
+#endif
 {
     return obfs->obfs_stage != -1 && obfs->deobfs_stage != -1;
 }

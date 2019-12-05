@@ -25,6 +25,15 @@
 
 #include "obfs.h"
 
+#ifndef SS_NG
 extern obfs_para_t *obfs_http;
+#else
+int obfs_http_request(buffer_t *, size_t, obfs_t *, void *);
+int obfs_http_response(buffer_t *, size_t, obfs_t *, void *);
+int deobfs_http_header(buffer_t *, size_t, obfs_t *, void *);
+int check_http_header(buffer_t *buf, void *);
+void disable_http(obfs_t *obfs, void *);
+int is_enable_http(obfs_t *obfs, void *);
+#endif
 
 #endif

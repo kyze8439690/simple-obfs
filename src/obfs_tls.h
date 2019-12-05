@@ -135,6 +135,16 @@ typedef struct frame {
     char  buf[2];
 } frame_t;
 
+#ifndef SS_NG
 extern obfs_para_t *obfs_tls;
+#else
+int obfs_tls_request(buffer_t *, size_t, obfs_t *, void *);
+int obfs_tls_response(buffer_t *, size_t, obfs_t *, void *);
+int deobfs_tls_request(buffer_t *, size_t, obfs_t *, void *);
+int deobfs_tls_response(buffer_t *, size_t, obfs_t *, void *);
+int check_tls_request(buffer_t *buf, void *);
+void disable_tls(obfs_t *obfs, void *);
+int is_enable_tls(obfs_t *obfs, void *);
+#endif
 
 #endif
