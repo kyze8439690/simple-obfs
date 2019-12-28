@@ -55,6 +55,11 @@
 #endif
 #endif
 
+#ifdef SS_NG
+#define MAX_HOSTNAME_LEN 256 // FQCN <= 255 characters
+#define MAX_PORT_STR_LEN 6   // PORT < 65536
+#endif
+
 /** byte size of ip4 address */
 #define INET_SIZE 4
 /** byte size of ip6 address */

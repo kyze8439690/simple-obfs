@@ -454,8 +454,14 @@ server_recv_cb(EV_P_ ev_io *w, int revents)
                 return;
             }
 #else
-            char name[4 * (256 / 3) + 1], *proxy_host = "", *proxy_port = "", *method = "", *password = "",
-                    *obfs = "", *obfs_host = "";
+            char name[4 * (256 / 3) + 1];
+            char proxy_host[MAX_HOSTNAME_LEN];
+            char proxy_port[MAX_PORT_STR_LEN];
+            char method[24];
+            char password[101];
+            char obfs[5];
+            char obfs_host[MAX_HOSTNAME_LEN];
+
             //name
             memset(name, 0, strlen(name));
             uint8_t slen = *(uint8_t *)(buf->data);
@@ -464,7 +470,7 @@ server_recv_cb(EV_P_ ev_io *w, int revents)
             int speed_test = *(buf->data + 1 + slen);
             int skip_len = 1 + slen + 1;
 
-            get_ss_proxy_info(name, &proxy_host, &proxy_port, &method, &password, &obfs, &obfs_host,
+            get_ss_proxy_info(name, proxy_host, proxy_port, method, password, obfs, obfs_host,
                     speed_test);
 
             if (strcmp(obfs, "tls") == 0) {
